@@ -343,7 +343,7 @@ class _GPT2BPETokenizer(MegatronTokenizer):
         self.tokenizer = GPT2Tokenizer(
             vocab_file, merge_file, errors='replace', special_tokens=[], max_len=None
         )
-        self.eod_id = self.tokenizer.encoder['<|endoftext|>']
+        self.eod_id = self.tokenizer.encoder['</s>']
 
     @property
     def vocab_size(self):
