@@ -4,7 +4,8 @@ build
 .coverage_*
 *.egg-info
 *~
-slurm/debug
+slurm_scripts/*debug*
+data/
 logs
 .vscode
 local/
