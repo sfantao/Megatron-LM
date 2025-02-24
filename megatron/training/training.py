@@ -1424,6 +1424,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     prof = None
     if args.profile and torch.distributed.get_rank() in args.profile_ranks and args.use_pytorch_profiler:
         prof = torch.profiler.profile(
+            activities=[
+        torch.profiler.ProfilerActivity.CPU,
+        torch.profiler.ProfilerActivity.CUDA,
+        ],
         schedule=torch.profiler.schedule(
             wait=max(args.profile_step_start-1, 0),
             warmup=1 if args.profile_step_start > 0 else 0,
