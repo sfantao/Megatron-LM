@@ -30,10 +30,13 @@ if [[ $SLURM_PROCID -eq 0 ]]; then
     echo "LINK LIBRARY" $LD_LIBRARY_PATH
 fi
 
+if [ "$SLURM_PROCID" -eq 0 ]; then
+    echo "LDD librccl" $(ldd /pfs/lustrep3/scratch/project_462000394/containers/for-turkunlp-team/deps-2025-02-19/aws-ofi-rccl-install/librccl-net.so)
+    echo "LD_LIBRARY" $LD_LIBRARY_PATH
+    echo "LDD libfabric.so" $(ldd /scratch/project_462000394/containers/for-turkunlp-team/deps-2025-02-19/libfabric-install-1.22.0/lib/libfabric.so)
+    #fi_info -p cxi
+fi
 
-# The usual PyTorch initialisations (also needed on NVIDIA)
-# Note that since we fix the port ID it is not possible to run, e.g., two
-# instances via this script using half a node each.
 export RANK=$SLURM_PROCID
 export LOCAL_RANK=$SLURM_LOCALID
 export WORLD_SIZE=$((8 * SLURM_NNODES))
