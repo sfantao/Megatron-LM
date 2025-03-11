@@ -12,11 +12,6 @@
 #SBATCH -o logs/%x-%j.out
 #SBATCH -e logs/%x-%j.err
 
-
-# symlink logs/latest.out and logs/latest.err
-ln -f -s logs/$SLURM_JOB_NAME-$SLURM_JOB_ID.out logs/latest.out
-ln -f -s logs/$SLURM_JOB_NAME-$SLURM_JOB_ID.err logs/latest.err
-
 #set -eox pipefail
 echo "Starting bash script"
 module purge

@@ -1,0 +1,5 @@
+ncclConfig:
+  blocking_mode: 0
+  cga_size: 4
+  min_num_cta: 12
+  max_num_cta: 32

@@ -1,7 +1,7 @@
 #!/bin/bash
 salloc -A project_462000615 \
     -p $4 \
-    --ntasks-per-node=8 \
+    --ntasks-per-node=$5 \
     --gpus-per-node=8 \
     --cpus-per-task=7 \
     --mem=480G \
