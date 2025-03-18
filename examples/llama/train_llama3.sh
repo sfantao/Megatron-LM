@@ -1,24 +1,30 @@
 #!/bin/bash
-###############################################################################
-# Copyright (c) 2024, Advanced Micro Devices, Inc. All rights reserved.
-#
-# See LICENSE for license information.
-#################################################################################
-#set -x
+#SBATCH --job-name=profile-megLM-34B-16N-newibfabric
+#SBATCH --nodes=16
+#SBATCH --cpus-per-task=7
+#SBATCH --ntasks-per-node=8
+#SBATCH --mem=480G
+#SBATCH --partition=standard-g
+#SBATCH --time=01:00:00
+#SBATCH --exclusive
+#SBATCH --gpus-per-node=8
+#SBATCH --account=project_462000615
+#SBATCH -o logs/%x-%j.out
+#SBATCH -e logs/%x-%j.err
 
 # set envs 
 export GPU_MAX_HW_QUEUES=2
 export TORCH_NCCL_HIGH_PRIORITY=1
 export NCCL_CHECKS_DISABLE=1
-export NCCL_IB_HCA=rdma0,rdma1,rdma2,rdma3,rdma4,rdma5,rdma6,rdma7 
-export NCCL_IB_GID_INDEX=3
+#export NCCL_IB_HCA=rdma0,rdma1,rdma2,rdma3,rdma4,rdma5,rdma6,rdma7 
+#export NCCL_IB_GID_INDEX=3
 export NCCL_CROSS_NIC=0
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export NCCL_PROTO=Simple
 export RCCL_MSCCL_ENABLE=0
 export TOKENIZERS_PARALLELISM=false
 export HSA_NO_SCRATCH_RECLAIM=1
-
+export NCCL_SOCKET_NTHREADS=16
 
 # parsing input arguments
 for ARGUMENT in "$@"
@@ -44,22 +50,13 @@ DISABLE_ROPE_TE="${DISABLE_ROPE_TE:-0}"
 echo "NO_TRAINING=$NO_TRAINING"
 
 CWD=`pwd`
-GPUS_PER_NODE=`python3 -c "import torch; print(torch.cuda.device_count())"`
 
 # single node config, Change for multinode config
 MASTER_ADDR="${MASTER_ADDR:-localhost}"
 MASTER_PORT="${MASTER_PORT:-6000}"
-NNODES="${NNODES:-1}"
+NNODES="${SLURM_NNODES:-1}"
 NODE_RANK="${NODE_RANK:-0}"
-WORLD_SIZE=$(($GPUS_PER_NODE*$NNODES))
-
-if [ "${NNODES:-1}" -gt 1 ]; then
-    export NCCL_SOCKET_IFNAME="${NCCL_SOCKET_IFNAME:-ens5}"
-    export GLOO_SOCKET_IFNAME="${GLOO_SOCKET_IFNAME:-ens50f0}"
-    echo "NCCL and GLOO socket interfaces set."
-else
-    echo "Single node setup, skipping NCCL and GLOO socket interface settings."
-fi
+WORLD_SIZE=$(($SLURM_GPUS_ON_NODE*$SLURM_NNODES))
 
 MODEL_SIZE="${MODEL_SIZE:-70}"
 TP="${TP:-8}"
@@ -82,9 +79,9 @@ CHECKPOINT_PATH=${CHECKPOINT_PATH:-"$EXPERIMENT_DIR/ckpts"}
 DATA_DIR="${DATA_DIR:-/root/.cache/data}"
 TOKENIZER_MODEL=meta-llama/Llama-3.1-8B
 # Download the tokenizer model
-# if ! [ -f "$TOKENIZER_MODEL" ]; then
-# wget -O $TOKENIZER_MODEL https://huggingface.co/meta-llama/Llama-3.1-8B/blob/main/original/tokenizer.model
-# fi
+if ! [ -f "$TOKENIZER_MODEL" ]; then
+wget -O $TOKENIZER_MODEL https://huggingface.co/meta-llama/Llama-3.1-8B/blob/main/original/tokenizer.model
+fi
 
 DATA_PATH=${DATA_PATH:-"$DATA_DIR/bookcorpus_text_sentence"}
 
@@ -184,31 +181,15 @@ OUTPUT_ARGS="
     --log-interval 1 \
     --save-interval 5000 \
     --log-throughput \
-    --no-save-optim \
     --eval-iters -1   
 "
-#  --save $CHECKPOINT_PATH \
-
-DISTRIBUTED_ARGS="
-    --nproc_per_node $GPUS_PER_NODE \
-    --nnodes $NNODES \
-    --node_rank $NODE_RANK \
-    --master_addr $MASTER_ADDR \
-    --master_port $MASTER_PORT \
-"
-
-CKPT_LOAD_ARGS="--exit-on-missing-checkpoint \
-        --no-load-optim \
-        --use-checkpoint-args \
-        --no-load-rng"
-
 
 EXTRA_ARGS="
     --group-query-attention \
     --num-query-groups $NUM_GROUPS \
     --no-gradient-accumulation-fusion \
     --distributed-backend nccl \
-    --distributed-timeout-minutes 120 \
+    --distributed-timeout-minutes 30 \
     --use-distributed-optimizer \
     --overlap-param-gather \
     --overlap-grad-reduce \
@@ -242,19 +223,20 @@ if [ "$DISABLE_ROPE_TE" -eq 1 ]; then
 EXTRA_ARGS="$EXTRA_ARGS --disable-te-fused-rope"
 fi
 
-if [ "$TE_FP8" -eq 1 ]; then
-EXTRA_ARGS="$EXTRA_ARGS --transformer-impl=transformer_engine \
-    --fp8-margin=0 \
-    --fp8-format=hybrid \
-    --fp8-interval=1 \
-    --fp8-amax-history-len=1024 \
-    --fp8-amax-compute-algo=max \
-    --attention-softmax-in-fp32 \
-"
-fi
+c="fe"
+
+# Bind mask for one thread per core
+BIND_MASK_1="0x${c}000000000000,0x${c}00000000000000,0x${c}0000,0x${c}000000,0x${c},0x${c}00,0x${c}00000000,0x${c}0000000000"
+
+#SINGULARITY
+CONTAINER=/scratch/project_462000394/containers/for-turkunlp-team/lumi/lumi-pytorch-rocm-6.2.4-python-3.12-pytorch-v2.6.0-dockerhash-0fe215fe8777.sif
+export SINGULARITY_BIND=/pfs,/scratch,/projappl,/project,/flash,/appl,/opt/cray,/var/spool/slurmd,/usr/lib64/libjansson.so.4,/pfs/lustrep3/scratch/project_462000394/containers/for-turkunlp-team/deps-2025-02-19
+
 
 run_cmd="
-    torchrun $DISTRIBUTED_ARGS pretrain_gpt.py \
+    srun --label --cpu-bind=mask_cpu:$BIND_MASK_1 \'
+        singularity exec \
+        $DISTRIBUTED_ARGS pretrain_gpt.py \
         $GPT_ARGS \
         $DATA_ARGS \
         $OUTPUT_ARGS \
