@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=test-megLM-te
-#SBATCH --nodes=2
+#SBATCH --job-name=profile-megLM-34B-16N-newibfabric
+#SBATCH --nodes=16
 #SBATCH --cpus-per-task=7
 #SBATCH --ntasks-per-node=8
 #SBATCH --mem=480G
-#SBATCH --partition=dev-g
+#SBATCH --partition=standard-g
 #SBATCH --time=01:00:00
 #SBATCH --exclusive
 #SBATCH --gpus-per-node=8
@@ -12,11 +12,10 @@
 #SBATCH -o logs/%x-%j.out
 #SBATCH -e logs/%x-%j.err
 
-#set -eox pipefail
+
+set -eox pipefail
 echo "Starting bash script"
 module purge
-module load PrgEnv-cray
-module load LUMI/24.03 partition/G
 #Save the current working directory for shorter path variables
 wd=(`pwd`)
 
@@ -25,19 +24,24 @@ LEARNING_RATE=1.5e-4
 MIN_LR=1.5e-5
 
 #COMPILER
-export CC=clang
-export CXX=clang++
+export CC=gcc-12
+export CXX=g++-12
 
 #DISTRIBUTED ARGS
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_PORT=9999
-export WORLD_SIZE=$SLURM_NTASKS #This is valid only if using srun as launcher
 export CUDA_DEVICE_MAX_CONNECTIONS=1 #This is needed for sequence paralellism
 
 #OMP THREADING
-export OMP_NUM_THREADS=1
-#export HSA_ENABLE_SDMA=1
+export OMP_NUM_THREADS=1 #Virtual threads to accompany the HW threads set by slurm
+export HSA_ENABLE_SDMA=0 #https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-gpu-aware-mpi-readme/
+                         #With SDMA enabled one is capped at 50GB/S uni-directional bandwidth
+                         #But it is consistent across gcd's
+                         #With pp and tp > 4, so going over gpu modules this might be wanted
+export HSA_NO_SCRATCH_RECLAIM=1
 
+
+#####
 #DEBUGGING, INCREASE VERBOSITY IN LOGS
 export MIOPEN_ENABLE_LOGGING=1
 export PYTHONWARNINGS=ignore
@@ -48,8 +52,7 @@ export RCCL_KERNEL_COLL_TRACE_ENABLE=1 #Dont know what this does
 #export AMD_LOG_LEVEL=1 #Very verbose. In our context seems to concern hipified cuda kernels
 export NCCL_DEBUG_SUBSYS=ALL #Spesify which stuff is logged from NCCL_DEBUG=INFO. Choices are P2P, COLL(Collecetives) etc.
 export NCCL_DEBUG_FILE=logs/nccl-debug-$SLURM_JOB_NAME.log #Move verose nccl logging to its own file
-#export HIP_LAUNCH_BLOCKING=1 #MAKES NCCL COLLECTIVES SYNCHRONOUS INSTEAD OF ASYNC
-#export NCCL_P2P_DISABLE=1
+export NCCL_NCHANNELS_PER_PEER=32
 #export AMD_SERIALIZE_KERNEL=3
 
 NVTE_ROCM_ARCH=gfx90a
@@ -60,33 +63,32 @@ CHECKPOINT_PATH=/scratch/project_462000353/villekom/europa-checkpoints/33B_check
 TENSORBOARD_PATH="/scratch/project_462000353/villekom/logs/europa-production/tensorboard/meg-LM-33B.$SLURM_JOB_ID"
 
 # sets TRAIN_DATA and VALIDATION_DATA
-source $wd/data/europa_data_flash.sh
 DATA_CACHE=/flash/project_462000353/temp_cache/
 MERGES=/scratch/project_462000353/europa-tokenizer/merges.txt
 VOCAB=/scratch/project_462000353/europa-tokenizer/vocab.json
 
 #PARALLELISM ARGS
-PP_SIZE=1
-TP_SIZE=1
-VPP_SIZE=1
+PP_SIZE=4
+TP_SIZE=4
+VPP_SIZE=2
 
 #LLama 34B
-#MODEL=EUROPA-34B
-#NLAYERS=56
-#NHIDDEN=7168
-#NHEADS=56
-#FFN_HIDDEN_SIZE=20480
-#SEQ_LEN=4096
-#NUM_KV_HEADS=8
+MODEL=EUROPA-34B
+NLAYERS=56
+NHIDDEN=7168
+NHEADS=56
+FFN_HIDDEN_SIZE=20480
+SEQ_LEN=4096
+NUM_KV_HEADS=8
 
 #TODO Calculate params for Tensorboard
-MODEL=LLAMA2_7B
-NHIDDEN=2048
-FFN_HIDDEN_SIZE=5504
-NLAYERS=24
-NHEADS=16
-SEQ_LEN=2048
-NUM_KV_HEADS=4
+#MODEL=LLAMA2_7B
+#NHIDDEN=2048
+#FFN_HIDDEN_SIZE=5504
+#NLAYERS=24
+#NHEADS=16
+#SEQ_LEN=2048
+#NUM_KV_HEADS=4
 
 #TOKENS
 TOTAL_TOKENS=3_000_000_000_000
@@ -208,7 +210,7 @@ CMD=" \
     --train-data-path $TRAIN_DATA \
     --valid-data-path $VALIDATION_DATA \
     --dataloader-type single \
-    --num-workers 2 \
+    --num-workers 5 \
     "
 
 echo $CMD
@@ -252,20 +254,13 @@ BIND_MASK_2="0x${c}00000000000000${c}000000000000,0x${c}00000000000000${c}000000
 
 BIND_MASK="$BIND_MASK_1"
 
-# Check if SLURM_JOB_NAME is set, meaning the script is invoked by sbatch
-if [ -z "$SLURM_JOB_NAME" ]; then
-    # If not set, create a log file dynamically
-    SLURM_JOB_NAME="interactive"
-fi
-
 echo "START $SLURM_JOBID: $(date)"
 echo "NNODES" $SLURM_NNODES
 echo "CPUS PER TASK" $SLURM_CPUS_PER_TASK
 
-
-CONTAINER=/scratch/project_462000353/containers/sif_images/rocm-6.2.1-python-3.12-pytorch-2.6-vllm-0.6-TE.sif
+CONTAINER=/scratch/project_462000394/containers/for-turkunlp-team/lumi/lumi-pytorch-rocm-6.2.4-python-3.12-pytorch-v2.6.0-dockerhash-0fe215fe8777.sif
 echo "CONTAINER" $CONTAINER
-export SINGULARITY_BIND=/pfs,/scratch,/projappl,/project,/flash,/appl,/usr/lib64/libjansson.so.4,/usr/lib64/libcxi.so.1,/opt/cray,/var/spool/slurmd
+export SINGULARITY_BIND=/pfs,/scratch,/projappl,/project,/flash,/appl,/opt/cray,/var/spool/slurmd,/usr/lib64/libjansson.so.4,/pfs/lustrep3/scratch/project_462000394/containers/for-turkunlp-team/deps-2025-02-19
 export PWD=(`pwd -P`)
 srun --label --cpu-bind=mask_cpu:$BIND_MASK \
     singularity exec \
