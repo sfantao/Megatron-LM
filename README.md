@@ -29,8 +29,17 @@ This is a branch of Rocm-Megatron based on upstream's commit [dea104b](https://g
     #Go inside the container, create a venv, and install newer versions of TE and FA
     singularity exec -B $PWD,/scratch/project_462000394/containers/for-turkunlp-team/ $CONTAINER bash -c "\$WITH_CONDA; python3 -m venv venv --system-site-packages; source venv/bin/activate; pip install -U tensorboard; pip install /scratch/project_462000394/containers/for-turkunlp-team/flash_attn-2.7.3-cp312-cp312-linux_x86_64.whl /scratch/project_462000394/containers/for-turkunlp-team/transformer_engine-1.11.0+e7a7f6d-cp312-cp312-linux_x86_64.whl"
     ```
-5. Modify the [train.slurm](slurm_scripts/train.slurm) and [launch.sh](slurm_scripts/launch.sh) script to use the correct paths.
+5. And finally, submit the job:
 
     ```sh
     sbatch slurm_scripts/train.slurm
     ```
+
+## Notes about the slurm scripts
+Remember to modify #SBATCH --account in [train.slurm](slurm_scripts/train.slurm) to point to your own project. Otherwise, if you followed these steps all of the paths created should be relative and therefore the scripts need not any more modification to work. (Hopefully) 
+
+[launch.sh](slurm_scripts/launch.sh) is a helper script to launch with singularity.
+
+[smoketest.sh](/slurm_scripts/smoketest.sh) Launches an rccl_tests all_reduce_perf within the container. This is supposed to be a sort of smoketest for faulty NIC's. 
+
+There is alot of commented out enviroment variables in in [train.slurm](slurm_scripts/train.slurm) that one can try out. There are explanations for most of them.

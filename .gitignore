@@ -5,6 +5,7 @@ build
 *.egg-info
 *~
 slurm_scripts/*debug*
+slurm_scripts/interactive
 data/
 *logs*
 .vscode

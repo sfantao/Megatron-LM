@@ -55,8 +55,8 @@ export TORCH_SHOW_CPP_STACKTRACES=1                     #C++ traceback for pytor
 #export TORCH_DIST_INIT_BARRIER=1                       #Initialize torch distributed new group instance with a barrier to synchronize ranks
 
 #LIBFABRIC
-export FI_LOG_LEVEL=warn                               #Libfabric logging. May cause performance degredation when set to 'debug'
-export FI_LOG_PROV=cxi                                  #Determine which libfabric provider to get logs from
+#export FI_LOG_LEVEL=warn                               #Very verbose Libfabric logging. May cause performance degredation when set to 'debug'
+#export FI_LOG_PROV=cxi                                  #Determine which libfabric provider to get logs from
 #export FI_CXI_ODP=1                                    #On demand paging. This should be an alternative to the CXI_FORK_SAFE for unsafe fork. See more with man intro_mpi
 #export FI_HMEM_DISABLE_P2P=1                           
 #export FI_HMEM=rocr                                     #Ensure that libfabric uses rocr's hmem instead of system
