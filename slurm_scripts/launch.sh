@@ -7,10 +7,9 @@ export MIOPEN_CUSTOM_CACHE_DIR=$MIOPEN_USER_DB_PATH
 
 # Start conda environment inside the container
 $WITH_CONDA
-source /scratch/project_462000615/villekom/sam_container_venv/bin/activate
-# Set interfaces to be used by RCCL.
-# This is needed as otherwise RCCL tries to use a network interface it has
-# noa ccess to on LUMI.
+#Venv outside the container
+source venv/bin/activate
+# Set interfaces to be used by RCCL
 export NCCL_SOCKET_IFNAME=hsn0,hsn1,hsn2,hsn3
 export NCCL_NET_GDR_LEVEL=PHB
 
@@ -33,8 +32,12 @@ if [ "$SLURM_PROCID" -eq 0 ]; then
     echo "LDD librccl" $(ldd /pfs/lustrep3/scratch/project_462000394/containers/for-turkunlp-team/deps-2025-02-24/aws-ofi-rccl2-install/librccl-net.so)
     echo "LD_LIBRARY" $LD_LIBRARY_PATH
     echo "LDD libfabric.so" $(ldd /scratch/project_462000394/containers/for-turkunlp-team/deps-2025-02-24/libfabric-install-master/lib/libfabric.so)
+    /scratch/project_462000394/containers/for-turkunlp-team/deps-2025-02-24/libfabric-install-master/bin/fi_info -p cxi
 fi
 
+#Distributed args
+#These need to be set after srun launches, or use interpolation with bash -c and \
+#https://github.com/stas00/ml-engineering/blob/master/orchestration/slurm/launchers/srun-launcher.slurm
 export RANK=$SLURM_PROCID
 export LOCAL_RANK=$SLURM_LOCALID
 export WORLD_SIZE=$((8 * SLURM_NNODES))
