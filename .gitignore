@@ -6,8 +6,10 @@ build
 *~
 slurm_scripts/*debug*
 data/
-logs
+*logs*
 .vscode
 local/
 .gitmodules
 core
+reproducible/
+venv/
