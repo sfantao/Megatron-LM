@@ -4,11 +4,11 @@
 #SBATCH --cpus-per-task=7
 #SBATCH --ntasks-per-node=8
 #SBATCH --mem=480G
-#SBATCH --partition=dev-g
+#SBATCH --partition=standard-g
 #SBATCH --time=00:30:00
 #SBATCH --exclusive
 #SBATCH --gpus-per-node=8
-#SBATCH --account=project_462000615                     #Insert your own project number here
+# # SBATCH --account=project_462000615                     #Insert your own project number here
 #SBATCH -o logs/%x-%j.out
 #SBATCH -e logs/%x-%j.err
 
@@ -69,11 +69,14 @@ export TORCH_SHOW_CPP_STACKTRACES=1                     #C++ traceback for pytor
 #export FI_CXI_RX_SIZE=4096
 #export FI_CXI_RX_MATCH_MODE=software                   #Address matching can be either hardware(cxi) or software
 
+export FI_MR_CACHE_MONITOR=userfaultfd
+export FI_CXI_DEFAULT_CQ_SIZE=131072
+
 #NCCL/RCCL
-export RCCL_KERNEL_COLL_TRACE_ENABLE=1                  #Print c++ code traceback for nccl collectives
-export NCCL_DEBUG=INFO                                  #Verbose logging from RCCL
-export NCCL_DEBUG_SUBSYS=ALL                            #Specify which stuff is logged from NCCL_DEBUG=INFO. Choices are P2P(Peer2Peer), COLL(Collecetives) etc.
-export NCCL_DEBUG_FILE=logs/nccl-$SLURM_JOB_NAME.log    #Move verbose nccl logging to its own file
+#export RCCL_KERNEL_COLL_TRACE_ENABLE=1                  #Print c++ code traceback for nccl collectives
+#export NCCL_DEBUG=INFO                                  #Verbose logging from RCCL
+#export NCCL_DEBUG_SUBSYS=INIT,COLL                            #Specify which stuff is logged from NCCL_DEBUG=INFO. Choices are P2P(Peer2Peer), COLL(Collecetives) etc.
+#export NCCL_DEBUG_FILE=logs/nccl-$SLURM_JOB_NAME.log    #Move verbose nccl logging to its own file
 export NCCL_NCHANNELS_PER_PEER=32                       #Increases the amount of channels available for p2p communication. Should be a slight performance boost
 #export HIP_LAUNCH_BLOCKING=1                           #MAKES NCCL COLLECTIVES SYNCHRONOUS INSTEAD OF ASYNC
 #export NCCL_PROTO=Simple,LL                            #Simple or LL instead of ll128
@@ -228,6 +231,13 @@ CMD=" \
     $OUTPUT_ARGS \
     --dataloader-type single \
     --num-workers 5 \
+    \
+    --profile-ranks 0 63 \
+    --profile-step-start 3 \
+    --profile-step-end 4 \
+    --use-pytorch-profiler \
+    --profile \
+    --train-iters 5 \
     "
 
 
@@ -240,13 +250,7 @@ c="fe"
 
 # Bind mask for one hardware thread per core
 # Set hardware threads on slurm with --threads-per-core. Default is 1.
-BIND_MASK_1="0x${c}000000000000,0x${c}00000000000000,0x${c}0000,0x${c}000000,0x${c},0x${c}00,0x${c}00000000,0x${c}0000000000"
-
-# Bind mask for two hardware threads per core
-BIND_MASK_2="0x${c}00000000000000${c}0000048
-0000000,0x${c}00000000000000${c}00000000000000,0x${c}00000000000000${c}0000,0x${c}00000000000000${c}000000,0x${c}00000000000000${c},0x${c}00000000000000${c}00,0x${c}00000000000000${c}00000000,0x${c}00000000000000${c}0000000000"
-
-BIND_MASK="$BIND_MASK_1"
+BIND_MASK="0x${c}000000000000,0x${c}00000000000000,0x${c}0000,0x${c}000000,0x${c},0x${c}00,0x${c}00000000,0x${c}0000000000"
 
 echo "START $SLURM_JOBID: $(date)"
 echo "NNODES" $SLURM_NNODES
@@ -254,9 +258,15 @@ echo "CPUS PER TASK" $SLURM_CPUS_PER_TASK
 
 
 #SINGULARITY ENVIRONMENT
-CONTAINER=/scratch/project_462000394/containers/for-turkunlp-team/lumi/lumi-pytorch-rocm-6.2.4-python-3.12-pytorch-v2.6.0-dockerhash-0fb1415058b3.sif
-export SINGULARITY_BIND=/boot,/pfs,/scratch,/projappl,/project,/flash,/appl,/opt/cray,/var/spool/slurmd,/usr/lib64/libjansson.so.4,/pfs/lustrep3/scratch/project_462000394/containers/for-turkunlp-team/deps-2025-02-19
+#CONTAINER=/scratch/project_462000394/containers/for-turkunlp-team/lumi/lumi-pytorch-rocm-6.2.4-python-3.12-pytorch-v2.6.0-dockerhash-0fb1415058b3.sif
 
+#export CONTAINER=/scratch/project_462000394/containers/for-turkunlp-team/lumi/lumi-pytorch-rocm-6.2.4-python-3.12-pytorch-v2.6.0-dockerhash-0fb1415058b3.sif
+#export SINGULARITY_BIND=/boot,/pfs,/scratch,/projappl,/project,/flash,/appl,/opt/cray,/var/spool/slurmd,/usr/lib64/libjansson.so.4,/pfs/lustrep3/scratch/project_462000394/containers/for-turkunlp-team/deps-2025-02-19
+
+#export CONTAINER=/appl/local/containers/tested-containers/lumi-pytorch-rocm-6.2.4-python-3.12-pytorch-v2.6.0-dockerhash-36e16fb5b67b.sif
+export CONTAINER=/appl/local/containers/sif-images/lumi-pytorch-rocm-6.2.4-python-3.12-pytorch-v2.6.0.sif
+export SINGULARITY_BIND=/boot,/pfs,/scratch,/projappl,/project,/flash,/appl,/opt/cray,/var/spool/slurmd
+Nodes=16
 
 #Run an rccl allreduce as a smoke test for unavailable NIC
 #The unavailable NIC might produce the following warning message
@@ -267,23 +277,34 @@ export SINGULARITY_BIND=/boot,/pfs,/scratch,/projappl,/project,/flash,/appl,/opt
 #This doesn't crash or cause hangs to my run ever
 #This was recommended by Samuel
 
-#echo "Running smoketest"
-
-srun singularity exec \
+echo "Running smoketest"
+chmod +x ./slurm_scripts/smoketest.sh
+srun -N $Nodes \
+    -n $((Nodes*8)) \
+    --cpu-bind=mask_cpu:$BIND_MASK \
+    --gpus=$((Nodes*8)) \
+    singularity exec \
     -B $PWD \
     $CONTAINER \
     ./slurm_scripts/smoketest.sh
 
 echo "Smoketest done"
+
+# # exit 0
 sleep 2
 
 echo "CONTAINER" $CONTAINER
 export PWD=(`pwd -P`)
-srun --label --cpu-bind=mask_cpu:$BIND_MASK_1 \
+
+chmod +x ./slurm_scripts/launch.sh
+srun -N $Nodes \
+    -n $((Nodes*8)) \
+    --cpu-bind=mask_cpu:$BIND_MASK \
+    --gpus=$((Nodes*8)) \
     singularity exec \
     -B $PWD \
     $CONTAINER \
     ./slurm_scripts/launch.sh \
-    $CMD
+    $CMD |& tee sfantao-log.txt
 
 echo "END $SLURM_JOBID: $(date)"
