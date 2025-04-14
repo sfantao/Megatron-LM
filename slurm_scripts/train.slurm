@@ -8,7 +8,7 @@
 #SBATCH --time=00:30:00
 #SBATCH --exclusive
 #SBATCH --gpus-per-node=8
-# # SBATCH --account=project_462000615                     #Insert your own project number here
+SBATCH --account=project_462000615                     #Insert your own project number here
 #SBATCH -o logs/%x-%j.out
 #SBATCH -e logs/%x-%j.err
 
@@ -134,9 +134,9 @@ NUM_QUERY_GROUPS=8
 #BATCH SIZE
 #GBS can be adjusted according to node count
 #Max 1024
-GLOBAL_BATCH_SIZE=512
+GLOBAL_BATCH_SIZE=1024
 #MBS max 1-2 with the default setup                        
-MICRO_BATCH_SIZE=1
+MICRO_BATCH_SIZE=2
 
 #LEARNING RATE
 LR=1.5e-4
@@ -305,6 +305,6 @@ srun -N $Nodes \
     -B $PWD \
     $CONTAINER \
     ./slurm_scripts/launch.sh \
-    $CMD |& tee sfantao-log.txt
+    $CMD |& tee train_log.log
 
 echo "END $SLURM_JOBID: $(date)"
